@@ -453,6 +453,92 @@ function pickPlayer(ti, pi){
   renderResult(lastDraw, lastBins);
 }
 
+/* ---------- ссылка на результат ----------
+   Готовые составы упаковываются прямо в адрес страницы: ни сервера, ни базы,
+   ссылка живёт столько же, сколько сам сайт. */
+
+// на локальном файле ссылку отправлять некому - подставляем адрес опубликованного сайта
+const SHARE_BASE = 'https://ivankrey.github.io/team-draw/';
+
+function b64enc(str){
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function b64dec(code){
+  const b64 = code.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+function encodeDraw(){
+  const data = {
+    v: 1,
+    n: lastDraw.map((t, i) => (teamNames[i] || '').trim()),
+    b: lastBins.length,
+    t: lastDraw.map(t => t.players.map(p => [p.name, p.female ? 1 : 0, p.bin])),
+    c: +$('#courts').value || 1,
+    d: $('#doubleRound').checked ? 1 : 0,
+    s: $('#showSchedule').checked ? 1 : 0
+  };
+  return b64enc(JSON.stringify(data));
+}
+
+function shareLink(){
+  const base = location.protocol === 'file:'
+    ? SHARE_BASE
+    : location.origin + location.pathname;
+  return base + '#r=' + encodeDraw();
+}
+
+// собираем команды и корзины обратно из данных ссылки
+function applyShared(code){
+  const d = JSON.parse(b64dec(code));
+  const nBins = d.b || 1;
+
+  const bins = [];
+  for (let i = 0; i < nBins; i++) bins.push([]);
+
+  const teams = d.t.map(list => {
+    const t = { players: [], girls: 0, rank: 0, keys: new Set(), byBin: new Array(nBins).fill(0) };
+    list.forEach(row => {
+      const p = mk(row[0], !!row[1], true, false);
+      p.bin = Math.min(row[2] || 0, nBins - 1);
+      t.players.push(p);
+      t.keys.add(p.key);
+      if (p.female) t.girls++;
+      t.rank += p.bin + 1;
+      t.byBin[p.bin]++;
+      bins[p.bin].push(p);
+    });
+    return t;
+  });
+
+  teamNames = d.n || [];
+  binTexts = bins.map(b => b.map(serializePlayer).join('\n'));
+  el.binsN.value = nBins;
+  el.teams.value = teams.length;
+  $('#courts').value = d.c || 1;
+  $('#doubleRound').checked = !!d.d;
+  $('#showSchedule').checked = d.s !== 0;
+
+  renderBins();
+  lastBins = bins;
+  lastDraw = teams;
+  picked = null;
+  el.warn.innerHTML = '';
+  renderResult(teams, bins);
+
+  const note = document.createElement('div');
+  note.className = 'msg info';
+  note.textContent = 'Открыт готовый результат по ссылке. Списки участников подставлены в корзины - можно перегенерировать или поправить составы вручную.';
+  el.result.insertBefore(note, el.result.firstChild);
+}
+
 /* ---------- расписание игр ---------- */
 
 function plural(n, one, few, many){
@@ -623,6 +709,7 @@ function renderResult(teams, bins){
       '<button id="btnCopy" class="ghost">Копировать</button>' +
       '<button id="btnTxt" class="ghost">TXT</button>' +
       '<button id="btnCsv" class="ghost">CSV</button>' +
+      '<button id="btnLink" class="ghost">Ссылка</button>' +
     '</div>' +
     '<p class="hint">Игроков можно менять местами вручную: нажмите на игрока, затем на игрока из другой команды.</p>';
 
@@ -664,6 +751,16 @@ function renderResult(teams, bins){
   };
   $('#btnTxt').onclick = () => download('teams.txt', asText(teams, bins.length, equal));
   $('#btnCsv').onclick = () => download('teams.csv', asCsv(teams, bins.length, equal));
+  $('#btnLink').onclick = () => {
+    const url = shareLink();
+    const b = $('#btnLink');
+    navigator.clipboard.writeText(url).then(() => {
+      b.textContent = 'Ссылка скопирована';
+      setTimeout(() => { b.textContent = 'Ссылка'; }, 1600);
+    }).catch(() => {
+      prompt('Скопируйте ссылку:', url);
+    });
+  };
 }
 
 function th(text){ const e = document.createElement('th'); e.textContent = text; return e; }
@@ -712,6 +809,8 @@ function doDraw(){
   }
   picked = null;
   lastBins = bins;
+  // старая ссылка в адресе больше не отражает то, что на экране
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   lastDraw = draw(bins, T, el.girls.checked);
   renderWarnings(bins, T, lastDraw);
   renderResult(lastDraw, bins);
@@ -824,3 +923,16 @@ $('#btnClear').onclick = () => {
 
 load();
 renderBins();
+
+// результат, открытый по ссылке
+const shared = location.hash.match(/^#r=(.+)$/);
+if (shared){
+  try { applyShared(shared[1]); }
+  catch (e){
+    el.warn.innerHTML = '';
+    const d = document.createElement('div');
+    d.className = 'msg warn';
+    d.textContent = 'Ссылка повреждена - не удалось прочитать составы.';
+    el.warn.appendChild(d);
+  }
+}
