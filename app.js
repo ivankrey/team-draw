@@ -192,12 +192,69 @@ function score(teams, bins, spreadGirls){
   return s;
 }
 
+/* Доводка обменами.
+   Раздача идёт корзина за корзиной, и к последней корзине свободные места
+   могут остаться всего в одной команде - тогда две девушки поневоле попадают
+   в одну. Лечится обменом: меняем местами двух игроков ИЗ ОДНОЙ корзины,
+   стоящих в разных командах. Размеры команд и раскладка по корзинам от этого
+   не меняются - меняется только распределение девушек и запретов. */
+
+function badness(teams, spreadGirls){
+  let s = 100000 * countConflicts(teams);
+  if (spreadGirls){
+    const T = teams.length;
+    const avg = teams.reduce((n, t) => n + t.girls, 0) / T;
+    for (const t of teams) s += Math.pow(t.girls - avg, 2);
+  }
+  return s;
+}
+
+function swapPlayers(ta, tb, ia, ib){
+  const pa = ta.players[ia], pb = tb.players[ib];
+  ta.players[ia] = pb;
+  tb.players[ib] = pa;
+  ta.keys.delete(pa.key); ta.keys.add(pb.key);
+  tb.keys.delete(pb.key); tb.keys.add(pa.key);
+  if (pa.female !== pb.female){
+    ta.girls += pb.female ? 1 : -1;
+    tb.girls += pa.female ? 1 : -1;
+  }
+}
+
+function improve(teams, spreadGirls){
+  let base = badness(teams, spreadGirls);
+  let guard = 0;
+  while (base > 0 && guard++ < 20){
+    let moved = false;
+    for (let i = 0; i < teams.length && base > 0; i++){
+      for (let j = i + 1; j < teams.length && base > 0; j++){
+        for (let a = 0; a < teams[i].players.length; a++){
+          for (let b = 0; b < teams[j].players.length; b++){
+            const pa = teams[i].players[a], pb = teams[j].players[b];
+            if (pa.bin !== pb.bin) continue;              // иначе съедет баланс корзин
+            if (pa.female === pb.female && !pa.enemies && !pb.enemies) continue;
+            swapPlayers(teams[i], teams[j], a, b);
+            const now = badness(teams, spreadGirls);
+            if (now < base - 1e-9){ base = now; moved = true; }
+            else swapPlayers(teams[i], teams[j], a, b);   // откат
+            if (base === 0) break;
+          }
+          if (base === 0) break;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+  return base;
+}
+
 function draw(bins, T, spreadGirls){
   const total = bins.reduce((s, b) => s + b.length, 0);
-  const tries = total > 400 ? 120 : 500;
+  const tries = total > 200 ? 60 : 300;
   let best = null, bestScore = Infinity;
   for (let i = 0; i < tries; i++){
     const t = attempt(bins, T, spreadGirls);
+    improve(t, spreadGirls);
     const sc = score(t, bins, spreadGirls);
     if (sc < bestScore){ bestScore = sc; best = t; }
   }
@@ -296,10 +353,9 @@ function renderWarnings(bins, T, teams){
   if (total < T) out.push('Участников меньше, чем команд - часть команд останется пустой.');
   if (total % T !== 0) out.push(total + ' не делится на ' + T + ' - составы будут отличаться на одного игрока.');
 
-  bins.forEach((b, i) => {
-    if (b.length && b.length % T !== 0)
-      out.push('В корзине ' + LETTERS[i] + ' ' + b.length + ' чел. - не кратно ' + T + ', эту корзину не разложить строго поровну.');
-  });
+  const uneven = bins.map((b, i) => b.length && b.length % T !== 0 ? LETTERS[i] + ' (' + b.length + ')' : null).filter(Boolean);
+  if (uneven.length)
+    out.push('Корзины ' + uneven.join(', ') + ' не кратны ' + T + ' - игроки из них разойдутся по командам с разницей в одного человека. Это нормально, общий баланс сохраняется.');
 
   if (teams && countConflicts(teams))
     out.push('Не удалось развести всех по персональным запретам - слишком мало команд или мест. Проверьте составы вручную.');
