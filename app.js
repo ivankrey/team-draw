@@ -447,18 +447,6 @@ function pickPlayer(ti, pi){
   renderResult(lastDraw, lastBins);
 }
 
-// пары, которые сейчас сидят в одной команде вопреки запрету
-function brokenPairs(teams){
-  const out = [];
-  teams.forEach(t => t.players.forEach(p => {
-    if (!p.enemies) return;
-    t.players.forEach(o => {
-      if (o !== p && p.enemies.has(o.key) && p.key < o.key) out.push(p.name + ' и ' + o.name);
-    });
-  }));
-  return out;
-}
-
 function renderResult(teams, bins){
   const usedBins = bins.map((b, i) => b.length ? i : -1).filter(i => i >= 0);
   const equal = equalSizes(teams);
@@ -533,14 +521,6 @@ function renderResult(teams, bins){
   panel.appendChild(tbl);
 
   el.result.innerHTML = '';
-
-  const broken = brokenPairs(teams);
-  if (broken.length){
-    const d = document.createElement('div');
-    d.className = 'msg warn';
-    d.textContent = 'В одной команде оказались те, кому нельзя вместе: ' + broken.join('; ') + '.';
-    el.result.appendChild(d);
-  }
 
   el.result.appendChild(wrap);
   el.result.appendChild(panel);
