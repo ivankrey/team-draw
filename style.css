@@ -64,6 +64,14 @@ button.mini{padding:3px 8px;font-size:12px}
 .teams{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin:14px 0}
 .team{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
 .team h3{margin:0 0 8px;font-size:15px;display:flex;align-items:center;gap:8px}
+.tname{
+  font:600 15px/1.2 inherit;color:var(--tx);background:transparent;
+  border:1px solid transparent;border-radius:6px;padding:3px 6px;margin-left:-6px;
+  width:60%;min-width:0;
+}
+.tname:hover{border-color:var(--line)}
+.tname:focus{outline:none;border-color:var(--acc);background:#fff}
+.tname::placeholder{color:var(--tx);opacity:1}
 .team h3 .n{color:var(--mut);font-weight:400;font-size:13px;margin-left:auto}
 .team ol{margin:0;padding-left:20px}
 .team li{padding:2px 4px;margin-left:-4px;border-radius:5px;cursor:pointer}
@@ -73,6 +81,8 @@ button.mini{padding:3px 8px;font-size:12px}
 .team .bins-line{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);color:var(--mut);font-size:12px}
 
 table.sum{border-collapse:collapse;width:auto;font-size:13px;margin-top:4px}
+.sched-h{margin:0 0 10px;font-size:15px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+table.sched td{white-space:nowrap}
 table.sum th,table.sum td{border:1px solid var(--line);padding:4px 10px;text-align:center}
 table.sum th{color:var(--mut);font-weight:500;background:var(--card2)}
 table.sum td.name{text-align:left}

@@ -24,6 +24,12 @@ let binTexts = ['', '', ''];   // содержимое корзин
 let lastDraw = null;
 let lastBins = null;
 let picked = null;   // выбранный игрок для ручного обмена: {ti, pi}
+let teamNames = [];  // названия команд, заданные вручную
+
+function teamName(i){
+  const n = (teamNames[i] || '').trim();
+  return n || 'Команда ' + (i + 1);
+}
 
 /* ---------- ключ человека (без учёта порядка слов и регистра) ---------- */
 
@@ -447,6 +453,111 @@ function pickPlayer(ti, pi){
   renderResult(lastDraw, lastBins);
 }
 
+/* ---------- расписание игр ---------- */
+
+function plural(n, one, few, many){
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 > 20)) return few;
+  return many;
+}
+
+/* Круговая система «карусель»: команда 1 стоит на месте, остальные сдвигаются по кругу.
+   При нечётном числе команд добавляется фиктивный соперник - кто с ним «играет», тот отдыхает.
+   Каждая команда встречается с каждой ровно один раз. */
+function roundRobin(T, double){
+  const ids = [];
+  for (let i = 0; i < T; i++) ids.push(i);
+  if (T % 2) ids.push(-1);          // -1 = отдых
+
+  const n = ids.length;
+  const rounds = [];
+  for (let r = 0; r < n - 1; r++){
+    const games = [], rest = [];
+    for (let i = 0; i < n / 2; i++){
+      const a = ids[i], b = ids[n - 1 - i];
+      if (a < 0) rest.push(b);
+      else if (b < 0) rest.push(a);
+      else games.push([a, b]);
+    }
+    rounds.push({ games: games, rest: rest });
+    ids.splice(1, 0, ids.pop());    // сдвиг по кругу
+  }
+  // второй круг - те же пары, но хозяева и гости меняются местами
+  if (double){
+    const back = rounds.map(r => ({
+      games: r.games.map(g => [g[1], g[0]]),
+      rest: r.rest.slice()
+    }));
+    return rounds.concat(back);
+  }
+  return rounds;
+}
+
+// раскладываем матчи по игровым окнам: за одно окно проходит столько игр, сколько площадок
+function scheduleSlots(rounds, courts){
+  const slots = [];
+  rounds.forEach((r, ri) => {
+    for (let i = 0; i < r.games.length; i += courts)
+      slots.push({ round: ri + 1, games: r.games.slice(i, i + courts), rest: r.rest });
+  });
+  return slots;
+}
+
+function renderSchedule(T, courts, double){
+  const rounds = roundRobin(T, double);
+  const slots = scheduleSlots(rounds, courts);
+  const hasRest = rounds.some(r => r.rest.length);
+  const multi = courts > 1;
+
+  const panel = document.createElement('div');
+  panel.className = 'panel';
+  const h = document.createElement('h3');
+  h.className = 'sched-h';
+  h.textContent = 'Расписание игр';
+  const games = rounds.reduce((n, r) => n + r.games.length, 0);
+  const sub = document.createElement('span');
+  sub.className = 'muted';
+  sub.textContent = ' каждая команда играет с каждой - ' + rounds.length + ' '
+    + plural(rounds.length, 'тур', 'тура', 'туров')
+    + ', всего ' + games + ' ' + plural(games, 'игра', 'игры', 'игр');
+  h.appendChild(sub);
+  panel.appendChild(h);
+
+  const tbl = document.createElement('table');
+  tbl.className = 'sum sched';
+  const head = document.createElement('tr');
+  head.appendChild(th(multi ? 'Тур' : '№'));
+  if (multi) for (let c = 0; c < courts; c++) head.appendChild(th('Площадка ' + (c + 1)));
+  else head.appendChild(th('Игра'));
+  if (hasRest) head.appendChild(th('Отдыхает'));
+  tbl.appendChild(head);
+
+  slots.forEach((s, i) => {
+    const tr = document.createElement('tr');
+    const c0 = td(multi ? String(s.round) : String(i + 1));
+    c0.className = 'name';
+    tr.appendChild(c0);
+    const cells = multi ? courts : 1;
+    for (let c = 0; c < cells; c++){
+      const g = s.games[c];
+      tr.appendChild(td(g ? teamName(g[0]) + ' - ' + teamName(g[1]) : '-'));
+    }
+    if (hasRest) tr.appendChild(td(s.rest.length ? s.rest.map(teamName).join(', ') : '-'));
+    tbl.appendChild(tr);
+  });
+
+  panel.appendChild(tbl);
+  return panel;
+}
+
+function scheduleText(T, double){
+  return 'РАСПИСАНИЕ\n' + roundRobin(T, double).map((r, i) =>
+    'Тур ' + (i + 1) + ': ' + r.games.map(g => teamName(g[0]) + ' - ' + teamName(g[1])).join(', ')
+    + (r.rest.length ? '  (отдыхает: ' + r.rest.map(teamName).join(', ') + ')' : '')
+  ).join('\n');
+}
+
 function renderResult(teams, bins){
   const usedBins = bins.map((b, i) => b.length ? i : -1).filter(i => i >= 0);
   const equal = equalSizes(teams);
@@ -458,7 +569,23 @@ function renderResult(teams, bins){
     card.className = 'team';
 
     const h = document.createElement('h3');
-    h.textContent = 'Команда ' + (i + 1);
+    const name = document.createElement('input');
+    name.className = 'tname';
+    name.value = teamNames[i] || '';
+    name.placeholder = 'Команда ' + (i + 1);
+    name.title = 'Название команды - можно вписать своё';
+    name.addEventListener('input', () => {
+      teamNames[i] = name.value;
+      save();
+      // точечно обновляем то, где встречается название - чтобы не терять фокус в поле
+      const row = el.result.querySelectorAll('table.sum:not(.sched) tr')[i + 1];
+      if (row) row.querySelector('td.name').textContent = teamName(i);
+      const sched = el.result.querySelector('.sched');
+      if (sched) sched.parentNode.replaceChild(
+        renderSchedule(teams.length, +$('#courts').value || 1, $('#doubleRound').checked).querySelector('.sched'),
+        sched);
+    });
+    h.appendChild(name);
     const n = document.createElement('span');
     n.className = 'n';
     n.textContent = t.players.length + ' чел.' + (t.girls ? ' · ♀ ' + t.girls : '');
@@ -492,7 +619,7 @@ function renderResult(teams, bins){
   panel.className = 'panel';
   panel.innerHTML =
     '<div class="exp">' +
-      '<button id="btnAgain">Перебросить</button>' +
+      '<button id="btnAgain">Перегенерировать</button>' +
       '<button id="btnCopy" class="ghost">Копировать</button>' +
       '<button id="btnTxt" class="ghost">TXT</button>' +
       '<button id="btnCsv" class="ghost">CSV</button>' +
@@ -511,7 +638,7 @@ function renderResult(teams, bins){
   tbl.appendChild(head);
   teams.forEach((t, i) => {
     const tr = document.createElement('tr');
-    const c0 = td(String(i + 1)); c0.className = 'name'; tr.appendChild(c0);
+    const c0 = td(teamName(i)); c0.className = 'name'; tr.appendChild(c0);
     usedBins.forEach(bi => tr.appendChild(td(String(t.byBin[bi]))));
     tr.appendChild(td(String(t.girls)));
     tr.appendChild(td(String(t.players.length)));
@@ -524,6 +651,8 @@ function renderResult(teams, bins){
 
   el.result.appendChild(wrap);
   el.result.appendChild(panel);
+  if ($('#showSchedule').checked && teams.length > 1)
+    el.result.appendChild(renderSchedule(teams.length, +$('#courts').value || 1, $('#doubleRound').checked));
 
   $('#btnAgain').onclick = doDraw;
   $('#btnCopy').onclick = () => {
@@ -541,16 +670,18 @@ function th(text){ const e = document.createElement('th'); e.textContent = text;
 function td(text){ const e = document.createElement('td'); e.textContent = text; return e; }
 
 function asText(teams, nBins, equal){
-  return teams.map((t, i) =>
-    'Команда ' + (i + 1) + ' (' + t.players.length + ' чел., сила ' + powerText(t, nBins, equal) + (equal ? '' : ' на игрока') + ')\n' +
+  const body = teams.map((t, i) =>
+    teamName(i) + ' (' + t.players.length + ' чел., сила ' + powerText(t, nBins, equal) + (equal ? '' : ' на игрока') + ')\n' +
     t.players.map(p => '  ' + p.name + (p.female ? ' ♀' : '')).join('\n')
   ).join('\n\n');
+  const withSched = $('#showSchedule').checked && teams.length > 1;
+  return body + (withSched ? '\n\n' + scheduleText(teams.length, $('#doubleRound').checked) : '');
 }
 
 function asCsv(teams, nBins, equal){
   const rows = [['Команда', 'Игрок', 'Пол', 'Корзина', 'Баллы', equal ? 'Сила команды' : 'Сила на игрока']];
   teams.forEach((t, i) => t.players.forEach(p =>
-    rows.push([i + 1, p.name, p.female ? 'ж' : 'м', LETTERS[p.bin], nBins - p.bin, powerText(t, nBins, equal)])));
+    rows.push([teamName(i), p.name, p.female ? 'ж' : 'м', LETTERS[p.bin], nBins - p.bin, powerText(t, nBins, equal)])));
   return '﻿' + rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(';')).join('\n');
 }
 
@@ -640,7 +771,9 @@ const DEMO = [
 
 function save(){
   localStorage.setItem(STORE, JSON.stringify({
-    bins: binTexts, teams: el.teams.value, girls: el.girls.checked
+    bins: binTexts, teams: el.teams.value, girls: el.girls.checked,
+    sched: $('#showSchedule').checked, courts: $('#courts').value,
+    double: $('#doubleRound').checked, names: teamNames
   }));
 }
 
@@ -651,6 +784,10 @@ function load(){
     if (Array.isArray(d.bins) && d.bins.length){ binTexts = d.bins; el.binsN.value = d.bins.length; }
     if (d.teams) el.teams.value = d.teams;
     el.girls.checked = d.girls !== false;
+    $('#showSchedule').checked = d.sched !== false;
+    $('#doubleRound').checked = !!d.double;
+    if (d.courts) $('#courts').value = d.courts;
+    if (Array.isArray(d.names)) teamNames = d.names;
   } catch (e) {}
 }
 
@@ -659,6 +796,9 @@ function load(){
 el.binsN.addEventListener('input', () => { renderBins(); save(); });
 el.teams.addEventListener('input', () => { updateStats(); save(); });
 el.girls.addEventListener('change', save);
+$('#showSchedule').addEventListener('change', () => { save(); if (lastDraw) renderResult(lastDraw, lastBins); });
+$('#courts').addEventListener('input', () => { save(); if (lastDraw) renderResult(lastDraw, lastBins); });
+$('#doubleRound').addEventListener('change', () => { save(); if (lastDraw) renderResult(lastDraw, lastBins); });
 $('#btnDraw').onclick = doDraw;
 $('#btnGender').onclick = openGender;
 $('#btnDedup').onclick = dedup;
