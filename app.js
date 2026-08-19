@@ -258,7 +258,9 @@ function draw(bins, T, spreadGirls){
     const sc = score(t, bins, spreadGirls);
     if (sc < bestScore){ bestScore = sc; best = t; }
   }
-  best.forEach(t => shuffle(t.players));  // порядок внутри команды тоже случайный
+  // внутри команды: сначала игроки из корзины A, потом B, C...
+  // (сортировка стабильная, поэтому внутри одной корзины порядок остаётся случайным)
+  best.forEach(t => { shuffle(t.players); t.players.sort((a, b) => a.bin - b.bin); });
   return best;
 }
 
