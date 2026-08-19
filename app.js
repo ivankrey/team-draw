@@ -453,6 +453,139 @@ function pickPlayer(ti, pi){
   renderResult(lastDraw, lastBins);
 }
 
+/* ---------- картинка с составами ----------
+   Рисуем на canvas вручную: PNG удобно кинуть в чат, его видно сразу,
+   без переходов по ссылкам. */
+
+const PNG = {
+  bg: '#f5f7fa', card: '#ffffff', line: '#dde2ea',
+  tx: '#1b1f27', mut: '#6b7484', girl: '#d6336c', acc: '#2563eb'
+};
+
+function fitText(ctx, text, max){
+  if (ctx.measureText(text).width <= max) return text;
+  let s = text;
+  while (s.length > 1 && ctx.measureText(s + '…').width > max) s = s.slice(0, -1);
+  return s + '…';
+}
+
+function drawImage(teams, bins){
+  const T = teams.length;
+  const cols = T <= 2 ? T : T <= 6 ? 3 : 4;
+  const rows = Math.ceil(T / cols);
+  const maxPlayers = Math.max.apply(null, teams.map(t => t.players.length));
+  const equal = equalSizes(teams);
+  const usedBins = bins.map((b, i) => b.length ? i : -1).filter(i => i >= 0);
+
+  const pad = 36, gap = 18, cardW = 300;
+  const cardH = 54 + 28 * maxPlayers + (usedBins.length > 1 ? 40 : 12);
+  const W = pad * 2 + cardW * cols + gap * (cols - 1);
+
+  const sched = $('#showSchedule').checked && T > 1
+    ? roundRobin(T, $('#doubleRound').checked) : null;
+  const schedH = sched ? 40 + 26 * sched.length + 16 : 0;
+
+  const H = pad + 46 + rows * cardH + (rows - 1) * gap + schedH + pad;
+
+  const scale = 2;
+  const cv = document.createElement('canvas');
+  cv.width = W * scale;
+  cv.height = H * scale;
+  const c = cv.getContext('2d');
+  c.scale(scale, scale);
+  c.textBaseline = 'top';
+
+  c.fillStyle = PNG.bg;
+  c.fillRect(0, 0, W, H);
+
+  c.fillStyle = PNG.tx;
+  c.font = '700 24px Arial';
+  c.fillText('Составы команд', pad, pad);
+  const total = teams.reduce((n, t) => n + t.players.length, 0);
+  const girls = teams.reduce((n, t) => n + t.girls, 0);
+  c.fillStyle = PNG.mut;
+  c.font = '14px Arial';
+  c.fillText(total + ' ' + plural(total, 'участник', 'участника', 'участников')
+    + (girls ? ', из них ♀ ' + girls : ''), pad, pad + 30);
+
+  const top0 = pad + 46;
+  teams.forEach((t, i) => {
+    const x = pad + (i % cols) * (cardW + gap);
+    const y = top0 + Math.floor(i / cols) * (cardH + gap);
+
+    c.fillStyle = PNG.card;
+    c.strokeStyle = PNG.line;
+    c.lineWidth = 1;
+    c.beginPath();
+    c.roundRect(x, y, cardW, cardH, 10);
+    c.fill();
+    c.stroke();
+
+    c.fillStyle = PNG.tx;
+    c.font = '700 17px Arial';
+    c.fillText(fitText(c, teamName(i), cardW - 100), x + 14, y + 14);
+
+    c.fillStyle = PNG.mut;
+    c.font = '13px Arial';
+    const cnt = t.players.length + ' чел.' + (t.girls ? ' · ♀' + t.girls : '');
+    c.fillText(cnt, x + cardW - 14 - c.measureText(cnt).width, y + 16);
+
+    c.font = '15px Arial';
+    t.players.forEach((p, pi) => {
+      const ty = y + 48 + pi * 28;
+      c.fillStyle = PNG.mut;
+      c.font = '13px Arial';
+      c.fillText(String(pi + 1) + '.', x + 14, ty + 2);
+      c.fillStyle = p.female ? PNG.girl : PNG.tx;
+      c.font = '15px Arial';
+      c.fillText(fitText(c, p.name + (p.female ? ' ♀' : ''), cardW - 50), x + 36, ty);
+    });
+
+    if (usedBins.length > 1){
+      const fy = y + cardH - 26;
+      c.strokeStyle = PNG.line;
+      c.beginPath();
+      c.moveTo(x + 14, fy - 8);
+      c.lineTo(x + cardW - 14, fy - 8);
+      c.stroke();
+      c.fillStyle = PNG.mut;
+      c.font = '12px Arial';
+      c.fillText(usedBins.map(bi => LETTERS[bi] + ': ' + t.byBin[bi]).join(' · ')
+        + ' · Сила: ' + powerText(t, bins.length, equal) + (equal ? '' : ' / игрок'), x + 14, fy);
+    }
+  });
+
+  if (sched){
+    let y = top0 + rows * cardH + (rows - 1) * gap + 28;
+    c.fillStyle = PNG.tx;
+    c.font = '700 18px Arial';
+    c.fillText('Расписание игр', pad, y);
+    y += 30;
+    c.font = '14px Arial';
+    sched.forEach((r, i) => {
+      c.fillStyle = PNG.mut;
+      c.fillText('Тур ' + (i + 1), pad, y);
+      c.fillStyle = PNG.tx;
+      const line = r.games.map(g => teamName(g[0]) + ' - ' + teamName(g[1])).join('   •   ')
+        + (r.rest.length ? '   (отдыхает: ' + r.rest.map(teamName).join(', ') + ')' : '');
+      c.fillText(fitText(c, line, W - pad * 2 - 70), pad + 70, y);
+      y += 26;
+    });
+  }
+
+  return cv;
+}
+
+function saveImage(teams, bins){
+  drawImage(teams, bins).toBlob(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'teams.png';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+}
+
 /* ---------- ссылка на результат ----------
    Готовые составы упаковываются прямо в адрес страницы: ни сервера, ни базы,
    ссылка живёт столько же, сколько сам сайт. */
@@ -710,6 +843,7 @@ function renderResult(teams, bins){
       '<button id="btnTxt" class="ghost">TXT</button>' +
       '<button id="btnCsv" class="ghost">CSV</button>' +
       '<button id="btnLink" class="ghost">Ссылка</button>' +
+      '<button id="btnPng" class="ghost">Картинка</button>' +
     '</div>' +
     '<p class="hint">Игроков можно менять местами вручную: нажмите на игрока, затем на игрока из другой команды.</p>';
 
@@ -751,6 +885,7 @@ function renderResult(teams, bins){
   };
   $('#btnTxt').onclick = () => download('teams.txt', asText(teams, bins.length, equal));
   $('#btnCsv').onclick = () => download('teams.csv', asCsv(teams, bins.length, equal));
+  $('#btnPng').onclick = () => saveImage(teams, bins);
   $('#btnLink').onclick = () => {
     const url = shareLink();
     const b = $('#btnLink');
