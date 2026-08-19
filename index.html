@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Жеребьёвка команд - волейбол</title>
+<meta name="description" content="Случайное деление участников на команды по корзинам. Равные составы, девушки по разным командам.">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏐</text></svg>">
+</head>
+<body>
+
+<header class="head">
+  <h1>🏐 Жеребьёвка команд</h1>
+  <p class="sub">Делит участников на команды по корзинам. Составы получаются максимально равными, девушки - по разным командам. Пол определяется по имени автоматически. Всё считается в браузере, данные никуда не отправляются.</p>
+</header>
+
+<section class="panel">
+  <div class="row">
+    <label class="fld">Команд
+      <input type="number" id="teamsCount" min="2" max="30" value="4">
+    </label>
+    <label class="fld">Корзин
+      <input type="number" id="binsCount" min="1" max="10" value="3">
+    </label>
+    <label class="chk"><input type="checkbox" id="spreadGirls" checked> Девушки максимально в разных командах</label>
+  </div>
+  <div class="row">
+    <button id="btnGender" class="ghost">Проверить пол</button>
+    <button id="btnDedup" class="ghost">Убрать дубли</button>
+    <button id="btnDemo" class="ghost">Пример</button>
+    <button id="btnClear" class="ghost danger">Очистить всё</button>
+  </div>
+  <p class="hint">Корзина - это уровень игроков. В A - сильные (связки, доигровщики), в B - средние, в C - новички. Из каждой корзины игроки раздаются по командам поровну. Пол угадывается по имени; если ошиблись - нажмите «Проверить пол» и поправьте, либо поставьте пометку вручную: <code>Аня*</code> - девушка, <code>Саша (м)</code> - мужчина.</p>
+  <p class="hint" id="ambNote"></p>
+</section>
+
+<section id="bins" class="bins"></section>
+
+<section class="panel draw-bar">
+  <button id="btnDraw" class="primary">Провести жеребьёвку</button>
+  <span id="stats" class="stats"></span>
+</section>
+
+<div id="warnings"></div>
+<section id="result"></section>
+
+<footer class="foot">Открытый исходный код - используйте как хотите.</footer>
+
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <b>Проверьте пол участников</b>
+      <span class="muted">Определено по имени. Нажмите на имя, чтобы переключить. Пунктиром обведены спорные имена.</span>
+      <button id="modalClose" class="ghost">Готово</button>
+    </div>
+    <div id="modalBody" class="modal-body"></div>
+  </div>
+</div>
+
+<script src="conflicts.js"></script>
+<script src="gender.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
