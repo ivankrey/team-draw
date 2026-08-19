@@ -22,6 +22,8 @@ const el = {
 
 let binTexts = ['', '', ''];   // содержимое корзин
 let lastDraw = null;
+let lastBins = null;
+let picked = null;   // выбранный игрок для ручного обмена: {ti, pi}
 
 /* ---------- ключ человека (без учёта порядка слов и регистра) ---------- */
 
@@ -431,6 +433,32 @@ function powerText(t, nBins, equal){
   return (p / t.players.length).toFixed(1).replace('.', ',');
 }
 
+/* Ручной обмен: нажали на игрока, потом на игрока другой команды - меняются местами.
+   Повторное нажатие на того же снимает выделение. */
+function pickPlayer(ti, pi){
+  if (picked && picked.ti === ti && picked.pi === pi) picked = null;
+  else if (!picked || picked.ti === ti) picked = { ti: ti, pi: pi };
+  else {
+    const ta = lastDraw[picked.ti], tb = lastDraw[ti];
+    swapPlayers(ta, tb, picked.pi, pi);
+    [ta, tb].forEach(t => t.players.sort((a, b) => a.bin - b.bin));
+    picked = null;
+  }
+  renderResult(lastDraw, lastBins);
+}
+
+// пары, которые сейчас сидят в одной команде вопреки запрету
+function brokenPairs(teams){
+  const out = [];
+  teams.forEach(t => t.players.forEach(p => {
+    if (!p.enemies) return;
+    t.players.forEach(o => {
+      if (o !== p && p.enemies.has(o.key) && p.key < o.key) out.push(p.name + ' и ' + o.name);
+    });
+  }));
+  return out;
+}
+
 function renderResult(teams, bins){
   const usedBins = bins.map((b, i) => b.length ? i : -1).filter(i => i >= 0);
   const equal = equalSizes(teams);
@@ -450,10 +478,12 @@ function renderResult(teams, bins){
     card.appendChild(h);
 
     const ol = document.createElement('ol');
-    t.players.forEach(p => {
+    t.players.forEach((p, pi) => {
       const li = document.createElement('li');
-      if (p.female) li.className = 'f';
+      li.className = (p.female ? 'f' : '') + (picked && picked.ti === i && picked.pi === pi ? ' pick' : '');
       li.textContent = p.name + (p.female ? ' ♀' : '');
+      li.title = 'Нажмите, чтобы поменять местами с игроком другой команды';
+      li.addEventListener('click', () => pickPlayer(i, pi));
       ol.appendChild(li);
     });
     card.appendChild(ol);
@@ -478,7 +508,8 @@ function renderResult(teams, bins){
       '<button id="btnCopy" class="ghost">Копировать</button>' +
       '<button id="btnTxt" class="ghost">TXT</button>' +
       '<button id="btnCsv" class="ghost">CSV</button>' +
-    '</div>';
+    '</div>' +
+    '<p class="hint">Игроков можно менять местами вручную: нажмите на игрока, затем на игрока из другой команды.</p>';
 
   const tbl = document.createElement('table');
   tbl.className = 'sum';
@@ -502,6 +533,15 @@ function renderResult(teams, bins){
   panel.appendChild(tbl);
 
   el.result.innerHTML = '';
+
+  const broken = brokenPairs(teams);
+  if (broken.length){
+    const d = document.createElement('div');
+    d.className = 'msg warn';
+    d.textContent = 'В одной команде оказались те, кому нельзя вместе: ' + broken.join('; ') + '.';
+    el.result.appendChild(d);
+  }
+
   el.result.appendChild(wrap);
   el.result.appendChild(panel);
 
@@ -559,6 +599,8 @@ function doDraw(){
     el.result.appendChild(d);
     return;
   }
+  picked = null;
+  lastBins = bins;
   lastDraw = draw(bins, T, el.girls.checked);
   renderWarnings(bins, T, lastDraw);
   renderResult(lastDraw, bins);

@@ -66,7 +66,9 @@ button.mini{padding:3px 8px;font-size:12px}
 .team h3{margin:0 0 8px;font-size:15px;display:flex;align-items:center;gap:8px}
 .team h3 .n{color:var(--mut);font-weight:400;font-size:13px;margin-left:auto}
 .team ol{margin:0;padding-left:20px}
-.team li{padding:2px 0}
+.team li{padding:2px 4px;margin-left:-4px;border-radius:5px;cursor:pointer}
+.team li:hover{background:var(--card2)}
+.team li.pick{background:#dbeafe;box-shadow:0 0 0 1px var(--acc)}
 .team li.f{color:var(--girl)}
 .team .bins-line{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);color:var(--mut);font-size:12px}
 
@@ -76,6 +78,7 @@ table.sum th{color:var(--mut);font-weight:500;background:var(--card2)}
 table.sum td.name{text-align:left}
 
 .exp{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.panel .hint{margin-top:10px}
 
 .modal{position:fixed;inset:0;background:rgba(16,24,40,.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
 .modal.hidden{display:none}
