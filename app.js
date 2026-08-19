@@ -321,17 +321,11 @@ function updateStats(){
     : rem + ' × ' + (base + 1) + ' и ' + (T - rem) + ' × ' + base;
   el.stats.textContent = 'Всего ' + total + ' чел. (♀ ' + girls + ') · ' + T + ' команд · составы: ' + sizes;
 
-  // спорные имена + сколько запретов реально задействовано
+  // спорные имена - предупреждаем, что пол мог определиться неверно
   const amb = flat.filter(p => p.ambiguous && !p.explicit).map(p => p.name);
-  const rules = CONFLICTS.filter(pair => {
-    const keys = flat.map(p => p.key);
-    return keys.includes(personKey(pair[0])) && keys.includes(personKey(pair[1]));
-  }).length;
-
-  const parts = [];
-  if (amb.length) parts.push('Пол неочевиден: ' + [...new Set(amb)].join(', ') + ' - проверьте кнопкой «Проверить пол».');
-  if (rules) parts.push('Действует персональных запретов: ' + rules + '.');
-  el.ambNote.textContent = parts.join(' ');
+  el.ambNote.textContent = amb.length
+    ? 'Пол неочевиден: ' + [...new Set(amb)].join(', ') + ' - проверьте кнопкой «Проверить пол».'
+    : '';
 }
 
 /* ---------- предупреждения ---------- */
