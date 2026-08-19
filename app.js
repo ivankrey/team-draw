@@ -112,8 +112,11 @@ function attempt(bins, T, spreadGirls){
   const total = bins.reduce((s, b) => s + b.length, 0);
   const targets = makeTargets(total, T);
 
+  // rank - суммарный уровень команды: игрок из A стоит 1, из B - 2, из C - 3...
+  // Чем меньше сумма, тем сильнее команда. Выравнивая её, мы компенсируем недобор:
+  // команда, которой не хватило сильного из A, получает лишнего из B, а не из D.
   const teams = Array.from({ length: T }, () => ({
-    players: [], girls: 0, keys: new Set(), byBin: new Array(bins.length).fill(0)
+    players: [], girls: 0, rank: 0, keys: new Set(), byBin: new Array(bins.length).fill(0)
   }));
 
   bins.forEach((bin, bi) => {
@@ -137,8 +140,9 @@ function attempt(bins, T, spreadGirls){
         const t = teams[i];
         const key = [
           spreadGirls && p.female ? t.girls : 0,  // 1. меньше всего девушек
-          t.byBin[bi],                            // 2. меньше всего игроков из этой корзины
-          t.players.length                        // 3. меньше всего игроков вообще
+          t.rank,                                 // 2. самая «недокомплектованная» по уровню
+          t.byBin[bi],                            // 3. меньше всего игроков из этой корзины
+          t.players.length                        // 4. меньше всего игроков вообще
         ];
         if (bestKey === null || less(key, bestKey)){ best = i; bestKey = key; }
       }
@@ -146,6 +150,7 @@ function attempt(bins, T, spreadGirls){
       t.players.push(p);
       t.keys.add(p.key);
       if (p.female) t.girls++;
+      t.rank += bi + 1;
       t.byBin[bi]++;
     }
   });
@@ -164,6 +169,7 @@ function hasEnemy(team, p){
 }
 
 function countConflicts(teams){
+  if (!ENEMIES.size) return 0;
   let n = 0;
   teams.forEach(t => t.players.forEach(p => {
     if (!p.enemies) return;
@@ -172,39 +178,38 @@ function countConflicts(teams){
   return n / 2;   // каждую пару считаем дважды
 }
 
-// чем меньше - тем ровнее раскладка
-function score(teams, bins, spreadGirls){
+// чем меньше - тем ровнее раскладка; тот же критерий, по которому работает доводка
+function score(teams, spreadGirls){
   const T = teams.length;
-  let s = 100000 * countConflicts(teams);   // нарушенный запрет - худшее, что может быть
-
-  if (spreadGirls){
-    const totalGirls = bins.reduce((n, b) => n + b.filter(p => p.female).length, 0);
-    const avg = totalGirls / T;
-    for (const t of teams) s += 1000 * Math.pow(t.girls - avg, 2);
-  }
-  bins.forEach((bin, bi) => {
-    const avg = bin.length / T;
-    for (const t of teams) s += 10 * Math.pow(t.byBin[bi] - avg, 2);
-  });
+  let s = badness(teams, spreadGirls);
   const avgSize = teams.reduce((n, t) => n + t.players.length, 0) / T;
   for (const t of teams) s += Math.pow(t.players.length - avgSize, 2);
-
   return s;
 }
 
 /* Доводка обменами.
-   Раздача идёт корзина за корзиной, и к последней корзине свободные места
-   могут остаться всего в одной команде - тогда две девушки поневоле попадают
-   в одну. Лечится обменом: меняем местами двух игроков ИЗ ОДНОЙ корзины,
-   стоящих в разных командах. Размеры команд и раскладка по корзинам от этого
-   не меняются - меняется только распределение девушек и запретов. */
+   Раздача идёт корзина за корзиной, поэтому к концу выбор сужается: свободные
+   места остаются в одной-двух командах, и туда попадает кто придётся - две
+   девушки разом или лишний слабый игрок. Лечится обменом: меняем местами двух
+   игроков из разных команд, если от этого общий перекос уменьшается. Размер
+   команд при обмене не меняется никогда, поэтому составы остаются равными. */
 
 function badness(teams, spreadGirls){
+  const T = teams.length;
   let s = 100000 * countConflicts(teams);
+
   if (spreadGirls){
-    const T = teams.length;
     const avg = teams.reduce((n, t) => n + t.girls, 0) / T;
-    for (const t of teams) s += Math.pow(t.girls - avg, 2);
+    for (const t of teams) s += 100 * Math.pow(t.girls - avg, 2);
+  }
+  // равенство команд по силе - главное, ради чего вообще нужны корзины
+  const avgRank = teams.reduce((n, t) => n + t.rank, 0) / T;
+  for (const t of teams) s += 10 * Math.pow(t.rank - avgRank, 2);
+
+  // и всё же стараемся не собирать в одной команде толпу из одной корзины
+  for (let bi = 0; bi < teams[0].byBin.length; bi++){
+    const avgB = teams.reduce((n, t) => n + t.byBin[bi], 0) / T;
+    for (const t of teams) s += Math.pow(t.byBin[bi] - avgB, 2);
   }
   return s;
 }
@@ -219,43 +224,73 @@ function swapPlayers(ta, tb, ia, ib){
     ta.girls += pb.female ? 1 : -1;
     tb.girls += pa.female ? 1 : -1;
   }
+  if (pa.bin !== pb.bin){
+    ta.rank += pb.bin - pa.bin;
+    tb.rank += pa.bin - pb.bin;
+    ta.byBin[pa.bin]--; ta.byBin[pb.bin]++;
+    tb.byBin[pb.bin]--; tb.byBin[pa.bin]++;
+  }
+}
+
+function teamConflicts(t){
+  if (!ENEMIES.size) return 0;
+  let n = 0;
+  for (const p of t.players){
+    if (!p.enemies) continue;
+    for (const k of p.enemies) if (t.keys.has(k)) n++;
+  }
+  return n / 2;
+}
+
+/* Вклад двух команд в общий перекос. Обмен затрагивает только их, а средние
+   не меняются (число девушек, сумма уровней и размеры корзин те же), поэтому
+   сравнивать достаточно эти две команды - на порядок быстрее полного пересчёта. */
+function pairCost(ta, tb, avgG, avgR, avgB, spreadGirls){
+  let s = 100000 * (teamConflicts(ta) + teamConflicts(tb));
+  if (spreadGirls) s += 100 * (Math.pow(ta.girls - avgG, 2) + Math.pow(tb.girls - avgG, 2));
+  s += 10 * (Math.pow(ta.rank - avgR, 2) + Math.pow(tb.rank - avgR, 2));
+  for (let bi = 0; bi < avgB.length; bi++)
+    s += Math.pow(ta.byBin[bi] - avgB[bi], 2) + Math.pow(tb.byBin[bi] - avgB[bi], 2);
+  return s;
 }
 
 function improve(teams, spreadGirls){
-  let base = badness(teams, spreadGirls);
-  let guard = 0;
-  while (base > 0 && guard++ < 20){
-    let moved = false;
-    for (let i = 0; i < teams.length && base > 0; i++){
-      for (let j = i + 1; j < teams.length && base > 0; j++){
-        for (let a = 0; a < teams[i].players.length; a++){
-          for (let b = 0; b < teams[j].players.length; b++){
-            const pa = teams[i].players[a], pb = teams[j].players[b];
-            if (pa.bin !== pb.bin) continue;              // иначе съедет баланс корзин
-            if (pa.female === pb.female && !pa.enemies && !pb.enemies) continue;
-            swapPlayers(teams[i], teams[j], a, b);
-            const now = badness(teams, spreadGirls);
-            if (now < base - 1e-9){ base = now; moved = true; }
-            else swapPlayers(teams[i], teams[j], a, b);   // откат
-            if (base === 0) break;
+  const T = teams.length;
+  const avgG = teams.reduce((n, t) => n + t.girls, 0) / T;
+  const avgR = teams.reduce((n, t) => n + t.rank, 0) / T;
+  const avgB = teams[0].byBin.map((_, bi) => teams.reduce((n, t) => n + t.byBin[bi], 0) / T);
+
+  let guard = 0, moved = true;
+  while (moved && guard++ < 12){
+    moved = false;
+    for (let i = 0; i < T; i++){
+      for (let j = i + 1; j < T; j++){
+        const ta = teams[i], tb = teams[j];
+        let before = pairCost(ta, tb, avgG, avgR, avgB, spreadGirls);
+        if (before === 0) continue;
+        for (let a = 0; a < ta.players.length; a++){
+          for (let b = 0; b < tb.players.length; b++){
+            const pa = ta.players[a], pb = tb.players[b];
+            if (pa.bin === pb.bin && pa.female === pb.female && !pa.enemies && !pb.enemies) continue;
+            swapPlayers(ta, tb, a, b);
+            const after = pairCost(ta, tb, avgG, avgR, avgB, spreadGirls);
+            if (after < before - 1e-9){ before = after; moved = true; }
+            else swapPlayers(ta, tb, a, b);   // откат
           }
-          if (base === 0) break;
         }
       }
     }
-    if (!moved) break;
   }
-  return base;
 }
 
 function draw(bins, T, spreadGirls){
   const total = bins.reduce((s, b) => s + b.length, 0);
-  const tries = total > 200 ? 60 : 300;
+  const tries = total <= 40 ? 150 : total <= 120 ? 60 : 25;
   let best = null, bestScore = Infinity;
   for (let i = 0; i < tries; i++){
     const t = attempt(bins, T, spreadGirls);
     improve(t, spreadGirls);
-    const sc = score(t, bins, spreadGirls);
+    const sc = score(t, spreadGirls);
     if (sc < bestScore){ bestScore = sc; best = t; }
   }
   // внутри команды: сначала игроки из корзины A, потом B, C...
@@ -367,6 +402,12 @@ function renderWarnings(bins, T, teams){
 
 /* ---------- отрисовка результата ---------- */
 
+// Сила команды: игрок из первой корзины стоит столько баллов, сколько всего корзин.
+// При четырёх корзинах A = 4, B = 3, C = 2, D = 1.
+function power(t, nBins){
+  return t.players.reduce((s, p) => s + (nBins - p.bin), 0);
+}
+
 function renderResult(teams, bins){
   const usedBins = bins.map((b, i) => b.length ? i : -1).filter(i => i >= 0);
 
@@ -397,6 +438,9 @@ function renderResult(teams, bins){
       const line = document.createElement('div');
       line.className = 'bins-line';
       line.textContent = usedBins.map(bi => LETTERS[bi] + ': ' + t.byBin[bi]).join(' · ');
+      const pw = document.createElement('b');
+      pw.textContent = ' · Сила: ' + power(t, bins.length);
+      line.appendChild(pw);
       card.appendChild(line);
     }
     wrap.appendChild(card);
@@ -420,6 +464,7 @@ function renderResult(teams, bins){
   usedBins.forEach(i => head.appendChild(th(LETTERS[i])));
   head.appendChild(th('♀'));
   head.appendChild(th('Всего'));
+  if (usedBins.length > 1) head.appendChild(th('Сила'));
   tbl.appendChild(head);
   teams.forEach((t, i) => {
     const tr = document.createElement('tr');
@@ -427,6 +472,7 @@ function renderResult(teams, bins){
     usedBins.forEach(bi => tr.appendChild(td(String(t.byBin[bi]))));
     tr.appendChild(td(String(t.girls)));
     tr.appendChild(td(String(t.players.length)));
+    if (usedBins.length > 1) tr.appendChild(td(String(power(t, bins.length))));
     tbl.appendChild(tr);
   });
   panel.appendChild(tbl);
@@ -437,30 +483,30 @@ function renderResult(teams, bins){
 
   $('#btnAgain').onclick = doDraw;
   $('#btnCopy').onclick = () => {
-    navigator.clipboard.writeText(asText(teams)).then(() => {
+    navigator.clipboard.writeText(asText(teams, bins.length)).then(() => {
       const b = $('#btnCopy');
       b.textContent = 'Скопировано';
       setTimeout(() => { b.textContent = 'Копировать'; }, 1200);
     });
   };
-  $('#btnTxt').onclick = () => download('teams.txt', asText(teams));
-  $('#btnCsv').onclick = () => download('teams.csv', asCsv(teams));
+  $('#btnTxt').onclick = () => download('teams.txt', asText(teams, bins.length));
+  $('#btnCsv').onclick = () => download('teams.csv', asCsv(teams, bins.length));
 }
 
 function th(text){ const e = document.createElement('th'); e.textContent = text; return e; }
 function td(text){ const e = document.createElement('td'); e.textContent = text; return e; }
 
-function asText(teams){
+function asText(teams, nBins){
   return teams.map((t, i) =>
-    'Команда ' + (i + 1) + ' (' + t.players.length + ')\n' +
+    'Команда ' + (i + 1) + ' (' + t.players.length + ' чел., сила ' + power(t, nBins) + ')\n' +
     t.players.map(p => '  ' + p.name + (p.female ? ' ♀' : '')).join('\n')
   ).join('\n\n');
 }
 
-function asCsv(teams){
-  const rows = [['Команда', 'Игрок', 'Пол', 'Корзина']];
+function asCsv(teams, nBins){
+  const rows = [['Команда', 'Игрок', 'Пол', 'Корзина', 'Баллы', 'Сила команды']];
   teams.forEach((t, i) => t.players.forEach(p =>
-    rows.push([i + 1, p.name, p.female ? 'ж' : 'м', LETTERS[p.bin]])));
+    rows.push([i + 1, p.name, p.female ? 'ж' : 'м', LETTERS[p.bin], nBins - p.bin, power(t, nBins)])));
   return '﻿' + rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(';')).join('\n');
 }
 
