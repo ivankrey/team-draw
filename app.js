@@ -698,14 +698,37 @@ const FIXED_4_BACK = [
   [[1, 2], [3, 0]]
 ];
 
-function fixedRounds(src){
-  return src.map(games => ({ games: games.map(g => g.slice()), rest: [] }));
+/* Для пяти команд - тоже готовый порядок. При одной площадке:
+   1-5, 2-4, 3-5, 2-1, 3-4, 5-2, 4-1, 2-3, 4-5, 1-3.
+   В каждом туре одна команда отдыхает, за круг отдыхают все по разу. */
+const FIXED_5 = [
+  [[0, 4], [1, 3]],
+  [[2, 4], [1, 0]],
+  [[2, 3], [4, 1]],
+  [[3, 0], [1, 2]],
+  [[3, 4], [0, 2]]
+];
+
+// flip - второй круг: та же пара, но хозяева и гости меняются местами
+function fixedRounds(src, T, flip){
+  return src.map(games => {
+    const g = games.map(x => flip ? [x[1], x[0]] : x.slice());
+    const playing = new Set();
+    g.forEach(p => { playing.add(p[0]); playing.add(p[1]); });
+    const rest = [];
+    for (let i = 0; i < T; i++) if (!playing.has(i)) rest.push(i);
+    return { games: g, rest: rest };
+  });
 }
 
 function roundRobin(T, double){
   if (T === 4){
-    const rounds = fixedRounds(FIXED_4);
-    return double ? rounds.concat(fixedRounds(FIXED_4_BACK)) : rounds;
+    const rounds = fixedRounds(FIXED_4, 4);
+    return double ? rounds.concat(fixedRounds(FIXED_4_BACK, 4)) : rounds;
+  }
+  if (T === 5){
+    const rounds = fixedRounds(FIXED_5, 5);
+    return double ? rounds.concat(fixedRounds(FIXED_5, 5, true)) : rounds;
   }
 
   const ids = [];
