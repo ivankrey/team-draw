@@ -127,6 +127,9 @@ function attempt(bins, T, spreadGirls){
     players: [], girls: 0, rank: 0, keys: new Set(), byBin: new Array(bins.length).fill(0)
   }));
 
+  // сколько игроков одной корзины допустимо в команде: корзина должна лечь максимально ровно
+  const binCap = bins.map(b => Math.ceil(b.length / T));
+
   bins.forEach((bin, bi) => {
     const queue = shuffle(bin.slice());
     // вперёд идут те, кого сложнее разместить: с запретами, затем девушки
@@ -136,6 +139,10 @@ function attempt(bins, T, spreadGirls){
       let cand = shuffle([...Array(T).keys()])
         .filter(i => teams[i].players.length < targets[i]);
       if (!cand.length) continue;
+
+      // не даём собрать в одной команде лишнего из этой же корзины
+      const room = cand.filter(i => teams[i].byBin[bi] < binCap[bi]);
+      if (room.length) cand = room;
 
       // убираем команды, где уже есть конфликтующий игрок
       if (p.enemies){
@@ -221,10 +228,18 @@ function badness(teams, spreadGirls){
     s += w * Math.pow(t.rank / t.players.length - perAvg, 2);
   }
 
-  // и всё же стараемся не собирать в одной команде толпу из одной корзины
+  // Корзина обязана лечь ровно: если в ней 4 человека на 4 команды - по одному в каждую.
+  // Перекос сверх этого штрафуется жёстко, важнее силы и девушек.
   for (let bi = 0; bi < teams[0].byBin.length; bi++){
-    const avgB = teams.reduce((n, t) => n + t.byBin[bi], 0) / T;
-    for (const t of teams) s += Math.pow(t.byBin[bi] - avgB, 2);
+    const total = teams.reduce((n, t) => n + t.byBin[bi], 0);
+    const avgB = total / T;
+    const lo = Math.floor(avgB), hi = Math.ceil(avgB);
+    for (const t of teams){
+      const n = t.byBin[bi];
+      if (n > hi) s += 5000 * (n - hi);
+      else if (n < lo) s += 5000 * (lo - n);
+      s += Math.pow(n - avgB, 2);
+    }
   }
   return s;
 }
@@ -260,13 +275,22 @@ function teamConflicts(t){
 /* Вклад двух команд в общий перекос. Обмен затрагивает только их, а средние
    не меняются (число девушек, сумма уровней и размеры корзин те же), поэтому
    сравнивать достаточно эти две команды - на порядок быстрее полного пересчёта. */
+function binPenalty(t, bi, avgB){
+  const n = t.byBin[bi];
+  const lo = Math.floor(avgB), hi = Math.ceil(avgB);
+  let s = Math.pow(n - avgB, 2);
+  if (n > hi) s += 5000 * (n - hi);
+  else if (n < lo) s += 5000 * (lo - n);
+  return s;
+}
+
 function pairCost(ta, tb, avgG, perAvg, w, avgB, spreadGirls){
   let s = 100000 * (teamConflicts(ta) + teamConflicts(tb));
   if (spreadGirls) s += 100 * (Math.pow(ta.girls - avgG, 2) + Math.pow(tb.girls - avgG, 2));
   if (ta.players.length) s += w * Math.pow(ta.rank / ta.players.length - perAvg, 2);
   if (tb.players.length) s += w * Math.pow(tb.rank / tb.players.length - perAvg, 2);
   for (let bi = 0; bi < avgB.length; bi++)
-    s += Math.pow(ta.byBin[bi] - avgB[bi], 2) + Math.pow(tb.byBin[bi] - avgB[bi], 2);
+    s += binPenalty(ta, bi, avgB[bi]) + binPenalty(tb, bi, avgB[bi]);
   return s;
 }
 
